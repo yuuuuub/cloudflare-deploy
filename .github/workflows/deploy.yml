@@ -1,0 +1,52 @@
+name: Deploy to Cloudflare
+
+on:
+  workflow_call:
+    inputs:
+      project-name:
+        required: true
+        type: string
+      deploy-dir:
+        required: false
+        type: string
+        default: "."
+      d1-database:
+        required: false
+        type: string
+        default: ""
+    secrets:
+      CLOUDFLARE_API_TOKEN:
+        required: true
+      CLOUDFLARE_ACCOUNT_ID:
+        required: true
+
+jobs:
+  db-migrate:
+    if: ${{ inputs.d1-database != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run D1 migrations
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: d1 execute ${{ inputs.d1-database }} --file=./migrations/0001_init.sql
+        continue-on-error: true
+
+  deploy:
+    needs: db-migrate
+    if: ${{ !failure() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy ${{ inputs.deploy-dir }} --project-name=${{ inputs.project-name }}
